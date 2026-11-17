@@ -20,6 +20,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #scene{position:absolute;inset:0;transform-origin:50% 50%;transition:transform 1s cubic-bezier(.7,0,.2,1),opacity .8s ease,filter .8s ease}
 #scene.zoom{opacity:0;filter:blur(6px)}
 #cv{position:absolute;inset:0;width:100%;height:100%;cursor:grab;touch-action:none}
+#amb{position:absolute;inset:-8%;width:116%;height:116%;display:none;filter:blur(22px) brightness(.5) saturate(1.1);pointer-events:none}
+body.port #amb{display:block}
 #cv.drag{cursor:grabbing}#cv.pick{cursor:pointer}
 #ov{position:absolute;overflow:visible;pointer-events:none}
 #ov .lines{transition:opacity .4s ease}
@@ -94,7 +96,7 @@ header>*{pointer-events:auto}
 #aptList .n{font-weight:500;font-size:11px;letter-spacing:.28em;flex:1}
 #aptList .m{font-size:12px;color:var(--mute);font-variant-numeric:tabular-nums}
 #aptList li.sold .n{color:var(--mute)}#aptList li.sold .m{color:#ff5a5a;letter-spacing:.16em;text-transform:uppercase;font-size:10px}
-#fpSlot{position:relative;min-height:0}
+#fpSlot{position:relative;min-height:0}#fpIn{position:relative;height:100%}#fpHint{display:none}
 #fp{position:absolute;opacity:0;transform:scale(.96);transition:opacity .6s .1s,transform .9s cubic-bezier(.2,.7,.2,1)}
 #kat.show #fp{opacity:1;transform:none}
 #fp img{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 30px 60px rgba(0,0,0,.5))}
@@ -228,21 +230,35 @@ header>*{pointer-events:auto}
   #floors button:before{left:20%;right:20%;top:auto;bottom:0;width:auto;height:2px;transform:scaleX(0)}#floors button.on:before{transform:scaleX(1)}
   .dock{bottom:18px}
   .wrap{inset:80px 16px 16px}
-  #kat .wrap{grid-template-columns:1fr;grid-template-rows:auto auto minmax(0,1fr) auto;gap:14px}
+  #kat .wrap{grid-template-columns:1fr;grid-template-rows:auto auto minmax(0,1fr) auto;gap:12px}
+  #fpSlot{margin:0 -16px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}#fpSlot::-webkit-scrollbar{display:none}
+  #fpIn{min-width:100%}
+  #fpHint{display:block;position:absolute;left:50%;bottom:4px;transform:translateX(-50%);white-space:nowrap;pointer-events:none;font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink);background:rgba(15,18,19,.75);border:1px solid var(--line);border-radius:99px;padding:7px 14px;opacity:0;transition:opacity .5s}
+  #kat.show #fpHint{animation:hintF 3.2s .9s both}
   .kside>div:first-child{order:1}.kside .ttl{order:2}#fpSlot{order:3}#aptList{order:4}.kside .ttl h2{font-size:30px;margin-top:0}
-  .kside{display:contents}.kside p{display:none}#aptList{display:flex;overflow-x:auto;border:0;margin-top:0}
-  #aptList li{flex:none;border:1px solid var(--line);margin-right:8px;padding:10px 12px}
-  #daire .wrap{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto;gap:16px}
-  #side h2{font-size:38px}#rooms{max-height:24vh}
-  #odaTxt{left:18px;right:18px;bottom:150px}#odaBar{left:18px;right:18px;bottom:18px}#odaThumbs{display:none}
+  .kside{display:contents}.kside p{display:none}#aptList{display:grid;grid-template-columns:1fr 1fr;gap:8px;border:0;margin-top:0;overflow:visible}
+  #aptList li{border:1px solid var(--line);border-radius:12px;padding:12px 12px;flex-direction:column;gap:4px;align-items:flex-start}
+  #aptList li.on{padding-left:12px}#aptList li:before{display:none}#aptList li.on{border-color:var(--gold)}
+  #aptList .n{font-size:10.5px}#aptList .m{font-size:13px;color:var(--gold)}
+  #daire .wrap{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);gap:10px;top:72px}
+  #bigslot{height:min(calc((100vw - 16px) * .74), 46vh);margin:0 -8px}
+  #side{min-height:0}#side .back{padding:4px 0}#side h2{font-size:34px;margin-top:4px}#side .tot{margin-top:4px}
+  #rooms{margin-top:12px;max-height:none}#rooms li{padding:9px 8px 9px 0}
+  #side .live{margin-top:12px;padding:10px 12px}#side .wa{margin-top:10px}
+  #odaTxt{left:18px;right:18px;bottom:128px}#odaTxt h2{font-size:52px}#odaTxt p{font-size:19px}#odaTxt .m{font-size:10.5px;letter-spacing:.2em}
+  #odaBar{left:0;right:0;bottom:16px;flex-wrap:nowrap;overflow-x:auto;padding:46px 18px 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  #odaBar::-webkit-scrollbar{display:none}#odaBar .chip{flex:none}
+  #odaBar .back{position:absolute;left:18px;top:0;margin:0;padding:8px 0}
+  #odaThumbs{display:none}
 }
+@keyframes hintF{0%{opacity:0}15%{opacity:1}75%{opacity:1}100%{opacity:0}}
 </style>
 </head>
 <body>
 
 <div id="bina">
   <div id="scene">
-    <canvas id="cv"></canvas>
+    <canvas id="amb" width="64" height="36"></canvas><canvas id="cv"></canvas>
     <svg id="ov" class="off" preserveAspectRatio="none"></svg>
   </div>
   <div class="shade"></div>
@@ -279,7 +295,7 @@ header>*{pointer-events:auto}
       <p>Kat planı üzerinde dairenize dokunun. Her katta dört daire bulunur.</p>
       <ul id="aptList"></ul>
     </div>
-    <div id="fpSlot"><div id="fp"><img src="kat.webp" alt="Normal kat planı"><svg id="fpSvg" viewBox="0 0 2523 1539"></svg></div></div>
+    <div id="fpSlot"><div id="fpIn"><div id="fp"><img src="kat.webp" alt="Normal kat planı"><svg id="fpSvg" viewBox="0 0 2523 1539"></svg></div><div id="fpHint">← Kaydırın →</div></div></div>
   </div>
 </section>
 
@@ -425,7 +441,7 @@ Promise.all(preload).then(ready);
 function loadLater() { for (let i = 0; i < M; i++) img(`f/n/${fn(i)}.webp`, NIGHT, false); Object.values(PHOTOS).flat().forEach(k => { const im = new Image(); im.src = `ic/${k}.webp`; }); }
 
 /* ================= LAYOUT: full-screen cover ================= */
-const cv = $('cv'), ctx = cv.getContext('2d'), ov = $('ov');
+const cv = $('cv'), ctx = cv.getContext('2d'), ov = $('ov'), actx = $('amb').getContext('2d');
 let box = { x: 0, y: 0, w: 0, h: 0 }, dpr = 1;
 function layout() {
   dpr = Math.min(devicePixelRatio || 1, 2);
@@ -434,9 +450,20 @@ function layout() {
   const A = 16 / 9;
   let w, h;
   if (cw / ch > A) { w = cw; h = cw / A; } else { h = ch; w = ch * A; }
-  if (cw < ch) { w = Math.max(cw * 1.7, ch * A * 0.5); h = w / A; } // phones: keep the whole building in view
-  const x = (cw - w) / 2;
-  const y = h > ch ? -(h - ch) * 0.45 : (ch - h) * 0.45;
+  const port = cw < ch; document.body.classList.toggle('port', port);
+  let x, y;
+  if (port) {
+    // phones: whole building + rooftop sign in view, centred between the title and the floor bar
+    w = cw / 0.72; h = w / A; x = (cw - w) / 2;
+    const t = $('intro').getBoundingClientRect().bottom + 6, fb = $('floors').getBoundingClientRect().top, b = fb > t + 100 ? fb - 6 : ch - 180;
+    if (b - t > h * 1.15) { const s = Math.min((b - t) / h, 1.04); w *= s; h *= s; x = (cw - w) / 2; }
+    y = t + Math.max(0, (b - t - h) * 0.4);
+    const m = `linear-gradient(to bottom,transparent ${y}px,#000 ${y + h * .1}px,#000 ${y + h * .88}px,transparent ${y + h}px)`;
+    cv.style.webkitMaskImage = cv.style.maskImage = m;
+  } else {
+    x = (cw - w) / 2; y = h > ch ? -(h - ch) * 0.45 : (ch - h) * 0.45;
+    cv.style.webkitMaskImage = cv.style.maskImage = '';
+  }
   box = { x, y, w, h };
   Object.assign(ov.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
   lastKey = ''; buildOverlay();
@@ -453,9 +480,15 @@ function draw() {
   if (key === lastKey) return; lastKey = key;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.globalAlpha = 1; ctx.fillStyle = '#121414'; ctx.fillRect(0, 0, innerWidth, innerHeight);
-  if (nb < 1) cover(ringFrame(p), 1);
+  const fd = ringFrame(p);
+  if (nb < 1) cover(fd, 1);
   if (nb > 0) { if (!cover(NIGHT[ni], nb)) lastKey = ''; }
   ctx.globalAlpha = 1;
+  if (document.body.classList.contains('port')) {
+    // cheap ambient glow: tiny canvas, blurred by CSS
+    if (nb < 1 && fd && fd.naturalWidth) { actx.globalAlpha = 1; actx.drawImage(fd, 0, 0, 64, 36); }
+    const nf = NIGHT[ni]; if (nb > 0 && nf && nf.naturalWidth) { actx.globalAlpha = nb; actx.drawImage(nf, 0, 0, 64, 36); }
+  }
 }
 
 /* ================= FLOOR OVERLAY ================= */
@@ -623,7 +656,18 @@ function openFloor(fl) {
   setTimeout(() => { showFloor(); S.busy = false; }, 820);
 }
 function fitFp() {
-  const r = $('fpSlot').getBoundingClientRect(), f = fitRect({ left: 0, top: 0, width: r.width, height: r.height }, FLOORPLAN.W, FLOORPLAN.H);
+  const sl = $('fpSlot'), r = sl.getBoundingClientRect();
+  if (innerWidth < innerHeight && innerWidth <= 900) {
+    // phone: plan ~1.9x screen width, swipe sideways; opens centred so all four apartments are in view
+    let w = r.width * 1.55, h = w * FLOORPLAN.H / FLOORPLAN.W;
+    if (h > r.height) { h = r.height; w = h * FLOORPLAN.W / FLOORPLAN.H; }
+    Object.assign($('fp').style, { left: '0px', top: Math.max(0, (r.height - h) / 2) + 'px', width: w + 'px', height: h + 'px' });
+    $('fpIn').style.width = w + 'px';
+    sl.scrollLeft = (w - r.width) / 2;
+    return;
+  }
+  $('fpIn').style.width = '';
+  const f = fitRect({ left: 0, top: 0, width: r.width, height: r.height }, FLOORPLAN.W, FLOORPLAN.H);
   Object.assign($('fp').style, { left: f.left + 'px', top: f.top + 'px', width: f.width + 'px', height: f.height + 'px' });
 }
 function aptRect(n) {
