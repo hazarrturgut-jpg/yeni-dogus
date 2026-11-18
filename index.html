@@ -460,7 +460,7 @@ function loadLater() { for (let s = 0; s < NSEG; s++) img(`s/n${s}.webp`, STOPN,
 const cv = $('cv'), ctx = cv.getContext('2d'), ov = $('ov'), actx = $('amb').getContext('2d');
 let box = { x: 0, y: 0, w: 0, h: 0 }, dpr = 1;
 function layout() {
-  dpr = Math.min(devicePixelRatio || 1, 2);
+  dpr = Math.min(devicePixelRatio || 1, 1.5);
   const cw = innerWidth, ch = innerHeight;
   cv.width = cw * dpr; cv.height = ch * dpr;
   const A = 16 / 9;
