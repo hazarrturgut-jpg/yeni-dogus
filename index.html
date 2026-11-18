@@ -283,7 +283,7 @@ header>*{pointer-events:auto}
 <aside id="floors"><div class="h">Kat seçimi</div></aside>
 <div class="dock" id="dock">
   <div class="track"><div class="knob" id="knob"></div></div>
-  <div class="stops"><button data-p="0" class="on">Ön</button><button data-p="1">Sağ</button><button data-p="2">Arka</button></div>
+  <div class="stops"><button data-p="0" class="on">Ön</button><button data-p="1">Sağ</button><button data-p="2">Arka</button><button data-p="3">Sol</button></div>
 </div>
 <div id="hint">← Sürükleyerek binanın etrafında dolaşın →</div>
 
@@ -334,18 +334,19 @@ header>*{pointer-events:auto}
 <script>
 (() => {
 /* ================= DATA ================= */
-const M = 95, NSEG = 3, FLOORS = 4;
-// Ring: seg0 Ön→Sağ, seg1 Sağ→Arka, seg2 Arka→Ön. Stops 0 Ön, 1 Sağ, 2 Arka. Night: one angle (sol köşe), day→night video.
+const M = 73, MN = 95, NSEG = 4, FLOORS = 4;
+// Ring: seg0 Ön→Sağ, seg1 Sağ→Arka, seg2 Arka→Sol, seg3 Sol→Ön. Stops 0 Ön, 1 Sağ, 2 Arka, 3 Sol. Night: one angle (sol köşe), day→night video.
 // Floor levels per resting view, 1920×1080 px, top → bottom; each level is a polyline across the facade(s).
 const P2 = (l, r, y) => [[l, y], [r, y]];
 const P3 = (l, c, r, yl, yc, yr) => [[l, yl], [c, yc], [r, yr]];
 const VIEWS = {
-  '0': [P2(360,1565,225), P2(360,1565,385), P2(360,1565,530), P2(360,1565,680), P2(360,1565,820)],
-  '1': [P3(500,1330,1590,245,300,220), P3(500,1330,1590,345,470,345), P3(500,1330,1590,450,635,465), P3(500,1330,1590,555,800,585), P3(500,1330,1590,665,945,700)],
-  '2': [P3(345,1000,1600,380,75,300), P3(345,1000,1600,470,285,415), P3(345,1000,1600,585,505,555), P3(345,1000,1600,715,715,715), P3(345,1000,1600,820,920,870)],
+  '0': [P2(360,1565,240), P2(360,1565,360), P2(360,1565,510), P2(360,1565,660), P2(360,1565,800)],
+  '1': [P2(547,1340,200), P2(547,1340,380), P2(547,1340,560), P2(547,1340,745), P2(547,1340,887)],
+  '2': [P2(307,1627,205), P2(307,1627,362), P2(307,1627,540), P2(307,1627,713), P2(307,1627,853)],
+  '3': [P2(520,1400,140), P2(520,1400,333), P2(520,1400,533), P2(520,1400,740), P2(520,1400,900)],
   'n': [P3(340,600,1550,265,100,290), P3(340,600,1550,380,270,410), P3(340,600,1550,525,460,540), P3(340,600,1550,680,670,675), P3(340,600,1550,810,880,790)]
 };
-const STOP_NAMES = { '0': 'Ön Cephe', '1': 'Sağ Cephe', '2': 'Arka Cephe', 'n': 'Gece Görünümü' };
+const STOP_NAMES = { '0': 'Ön Cephe', '1': 'Sağ Cephe', '2': 'Arka Cephe', '3': 'Sol Cephe', 'n': 'Gece Görünümü' };
 const FLOOR_SHORT = ['', 'Z', '01', '02', '03'];
 const FLOOR_LONG = ['', 'Zemin kat', 'Birinci kat', 'İkinci kat', 'Üçüncü kat'];
 const FL = f => f === 1 ? 'Zemin Kat' : `${f - 1}. Kat`;
@@ -403,7 +404,7 @@ const APTS = [
 const SOLD = {};
 const isSold = (floor, apt) => (SOLD[floor] || []).includes(apt);
 // WhatsApp numarası: ülke kodu ile, boşluksuz (örn. 905321234567). Boşsa WhatsApp kişi seçtirir.
-const WA_NUMBER = '';
+const WA_NUMBER = '905303201247';
 const PROJECT = 'Yeni Doğuş';
 // Örnek (demo) sitede izleyici sayısı simüle edilir. Gerçek projede gerçek sayaca bağlanmalı.
 const DEMO_VIEWERS = true;
@@ -428,7 +429,7 @@ const $ = id => document.getElementById(id);
 const S = { view: 'bina', floor: null, apt: null, room: null, busy: false, mode: 'day' };
 
 /* ================= LOADING ================= */
-const SEG = [[], [], []], NIGHT = [];
+const SEG = [[], [], [], []], NIGHT = [];
 const preload = [];
 function img(src, arr, wait = true) { const im = new Image(); im.decoding = 'async'; if (wait) preload.push(new Promise(r => { im.onload = im.onerror = () => { tick(); r(); }; })); im.src = src; if (arr) arr.push(im); return im; }
 let loaded = 0, TOTAL = M * NSEG + APTS.length + 1;
@@ -438,7 +439,7 @@ for (let s = 0; s < NSEG; s++) for (let i = 0; i < M; i++) img(`f/${s}/${fn(i)}.
 APTS.forEach(a => img(`plan/d${a.n}.webp`)); img('kat.webp');
 Promise.all(preload).then(ready);
 // night frames + room photos load in background
-function loadLater() { for (let i = 0; i < M; i++) img(`f/n/${fn(i)}.webp`, NIGHT, false); Object.values(PHOTOS).flat().forEach(k => { const im = new Image(); im.src = `ic/${k}.webp`; }); }
+function loadLater() { for (let i = 0; i < MN; i++) img(`f/n/${fn(i)}.webp`, NIGHT, false); Object.values(PHOTOS).flat().forEach(k => { const im = new Image(); im.src = `ic/${k}.webp`; }); }
 
 /* ================= LAYOUT: full-screen cover ================= */
 const cv = $('cv'), ctx = cv.getContext('2d'), ov = $('ov'), actx = $('amb').getContext('2d');
@@ -475,7 +476,7 @@ const mod = (a, n) => ((a % n) + n) % n;
 function ringFrame(pp) { const q = mod(pp, NSEG); let s = Math.floor(q), f = q - s; if (s >= NSEG) { s = 0; f = 0; } return SEG[s][Math.round(f * (M - 1))]; }
 function cover(im, alpha) { if (!im || !im.naturalWidth) return false; ctx.globalAlpha = alpha; ctx.drawImage(im, box.x, box.y, box.w, box.h); return true; }
 function draw() {
-  const ni = Math.round(nk * (M - 1));
+  const ni = Math.round(nk * (MN - 1));
   const key = mod(p, NSEG).toFixed(4) + '|' + nb.toFixed(3) + '|' + ni;
   if (key === lastKey) return; lastKey = key;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -587,7 +588,7 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft') { target = snap(Math.round(target) - 1); hideHint(); }
   if (e.key === 'ArrowRight') { target = snap(Math.round(target) + 1); hideHint(); }
 });
-document.querySelectorAll('.stops button').forEach(b => b.addEventListener('click', () => { if (nightOn) return; const cur = Math.round(target), d = mod(+b.dataset.p - cur + 1, NSEG) - 1; target = cur + d; hideHint(); }));
+document.querySelectorAll('.stops button').forEach(b => b.addEventListener('click', () => { if (nightOn) return; const cur = Math.round(target), d = mod(+b.dataset.p - cur + 2, NSEG) - 2; target = cur + d; hideHint(); }));
 document.querySelectorAll('#mode button').forEach(b => b.addEventListener('click', () => {
   S.mode = b.dataset.m; nightOn = S.mode === 'night'; if (nightOn) target = Math.round(target); $('dock').style.opacity = nightOn ? 0 : 1; $('dock').style.pointerEvents = nightOn ? 'none' : '';
   document.querySelectorAll('#mode button').forEach(x => x.classList.toggle('on', x === b));
