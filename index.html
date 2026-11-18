@@ -334,8 +334,9 @@ header>*{pointer-events:auto}
 <script>
 (() => {
 /* ================= DATA ================= */
-const M = 73, MN = 95, NSEG = 4, FLOORS = 4;
-// Ring: seg0 Ön→Sağ, seg1 Sağ→Arka, seg2 Arka→Sol, seg3 Sol→Ön. Stops 0 Ön, 1 Sağ, 2 Arka, 3 Sol. Night: one angle (sol köşe), day→night video.
+const M = 73, NSEG = 4, FLOORS = 4;
+// Ring: seg0 Ön→Sağ, seg1 Sağ→Arka, seg2 Arka→Sol, seg3 Sol→Ön. Stops 0 Ön, 1 Sağ, 2 Arka, 3 Sol.
+// Every ring frame exists as day (r/) and night (n/) at 1280px; each stop also has a sharp 1920px still (s/d#, s/n#).
 // Floor levels per resting view, 1920×1080 px, top → bottom; each level is a polyline across the facade(s).
 const P2 = (l, r, y) => [[l, y], [r, y]];
 const P3 = (l, c, r, yl, yc, yr) => [[l, yl], [c, yc], [r, yr]];
@@ -344,9 +345,8 @@ const VIEWS = {
   '1': [P2(547,1340,200), P2(547,1340,380), P2(547,1340,560), P2(547,1340,745), P2(547,1340,887)],
   '2': [P2(307,1627,205), P2(307,1627,362), P2(307,1627,540), P2(307,1627,713), P2(307,1627,853)],
   '3': [P2(520,1400,140), P2(520,1400,333), P2(520,1400,533), P2(520,1400,740), P2(520,1400,900)],
-  'n': [P3(340,600,1550,265,100,290), P3(340,600,1550,380,270,410), P3(340,600,1550,525,460,540), P3(340,600,1550,680,670,675), P3(340,600,1550,810,880,790)]
 };
-const STOP_NAMES = { '0': 'Ön Cephe', '1': 'Sağ Cephe', '2': 'Arka Cephe', '3': 'Sol Cephe', 'n': 'Gece Görünümü' };
+const STOP_NAMES = { '0': 'Ön Cephe', '1': 'Sağ Cephe', '2': 'Arka Cephe', '3': 'Sol Cephe' };
 const FLOOR_SHORT = ['', 'Z', '01', '02', '03'];
 const FLOOR_LONG = ['', 'Zemin kat', 'Birinci kat', 'İkinci kat', 'Üçüncü kat'];
 const FL = f => f === 1 ? 'Zemin Kat' : `${f - 1}. Kat`;
@@ -429,17 +429,18 @@ const $ = id => document.getElementById(id);
 const S = { view: 'bina', floor: null, apt: null, room: null, busy: false, mode: 'day' };
 
 /* ================= LOADING ================= */
-const SEG = [[], [], [], []], NIGHT = [];
+const SEG = [[], [], [], []], NSEGF = [[], [], [], []], STOPD = [], STOPN = [];
 const preload = [];
 function img(src, arr, wait = true) { const im = new Image(); im.decoding = 'async'; if (wait) preload.push(new Promise(r => { im.onload = im.onerror = () => { tick(); r(); }; })); im.src = src; if (arr) arr.push(im); return im; }
-let loaded = 0, TOTAL = M * NSEG + APTS.length + 1;
+let loaded = 0, TOTAL = M * NSEG + NSEG + APTS.length + 1;
 function tick() { loaded++; $('lb').style.width = (loaded / TOTAL * 100) + '%'; }
 const fn = i => String(i + 1).padStart(3, '0');
 for (let s = 0; s < NSEG; s++) for (let i = 0; i < M; i++) img(`r/${s}/${fn(i)}.webp`, SEG[s]);
+for (let s = 0; s < NSEG; s++) img(`s/d${s}.webp`, STOPD);
 APTS.forEach(a => img(`plan/d${a.n}.webp`)); img('kat.webp');
 Promise.all(preload).then(ready);
 // night frames + room photos load in background
-function loadLater() { for (let i = 0; i < MN; i++) img(`f/n/${fn(i)}.webp`, NIGHT, false); Object.values(PHOTOS).flat().forEach(k => { const im = new Image(); im.src = `ic/${k}.webp`; }); }
+function loadLater() { for (let s = 0; s < NSEG; s++) img(`s/n${s}.webp`, STOPN, false); for (let s = 0; s < NSEG; s++) for (let i = 0; i < M; i++) img(`n/${s}/${fn(i)}.webp`, NSEGF[s], false); Object.values(PHOTOS).flat().forEach(k => { const im = new Image(); im.src = `ic/${k}.webp`; }); }
 
 /* ================= LAYOUT: full-screen cover ================= */
 const cv = $('cv'), ctx = cv.getContext('2d'), ov = $('ov'), actx = $('amb').getContext('2d');
@@ -471,37 +472,64 @@ function layout() {
 }
 
 /* ================= DRAW ================= */
-let p = 0, target = 0, nb = 0, nk = 0, nightOn = false, lastKey = '';
+let p = 0, target = 0, nb = 0, nightOn = false, lastKey = '';
 const mod = (a, n) => ((a % n) + n) % n;
-function ringFrame(pp) {
-  const q = mod(pp, NSEG); let s = Math.floor(q), f = q - s; if (s >= NSEG) { s = 0; f = 0; }
-  const im = SEG[s][Math.round(f * (M - 1))]; if (im && im.naturalWidth) return im;
-  // never show black: fall back to the nearest frame that has loaded
-  const N = NSEG * (M - 1), g = Math.round(q * (M - 1));
-  for (let d = 1; d < N; d++) for (const k of [g - d, g + d]) { const gg = mod(k, N), ss = Math.floor(gg / (M - 1)), ff = gg % (M - 1), c = SEG[ss] && SEG[ss][ff]; if (c && c.naturalWidth) return c; }
-  return im;
+/* Smooth scrubbing: frames are decoded ahead of time into ImageBitmaps (small LRU window around
+   the current angle), so drawing never waits on a JPEG/WebP decode. */
+const RING = NSEG * (M - 1), MOB = innerWidth < 900, MAXBM = MOB ? 36 : 80, BMW = MOB ? 960 : 1280;
+const BM = new Map(), PEND = new Set();
+const gidx = q => mod(Math.round(mod(q, NSEG) * (M - 1)), RING);
+const srcAt = (set, g) => { const ss = Math.floor(g / (M - 1)), ff = g % (M - 1); return (set === 'n' ? NSEGF : SEG)[ss][ff]; };
+const rdist = (a, b) => { const d = Math.abs(a - b) % RING; return Math.min(d, RING - d); };
+function want(set, g) {
+  const key = set + g; if (BM.has(key) || PEND.has(key) || !window.createImageBitmap) return;
+  const im = srcAt(set, g); if (!im || !im.naturalWidth) return;
+  PEND.add(key);
+  createImageBitmap(im, { resizeWidth: BMW, resizeHeight: Math.round(BMW * 9 / 16), resizeQuality: 'high' })
+    .then(bm => { PEND.delete(key); BM.set(key, bm); lastKey = ''; evict(); }).catch(() => PEND.delete(key));
 }
-function cover(im, alpha) { if (!im || !im.naturalWidth) return false; ctx.globalAlpha = alpha; ctx.drawImage(im, box.x, box.y, box.w, box.h); return true; }
+function evict() {
+  if (BM.size <= MAXBM) return;
+  const cur = gidx(p), ks = [...BM.keys()].sort((a, b) => rdist(+b.slice(1), cur) - rdist(+a.slice(1), cur));
+  while (BM.size > MAXBM) { const k = ks.shift(), bm = BM.get(k); if (bm && bm.close) bm.close(); BM.delete(k); }
+}
+function prefetch() {
+  const g = gidx(p), dir = target >= p ? 1 : -1, sets = nb > 0 || nightOn ? (nb >= 1 ? ['n'] : ['d', 'n']) : ['d'];
+  for (const set of sets) for (let d = 0; d <= 18; d++) { want(set, mod(g + d * dir, RING)); if (d <= 8) want(set, mod(g - d * dir, RING)); }
+}
+function frameAt(set, q) {
+  const g = gidx(q);
+  for (let d = 0; d < RING / 2; d++) for (const k of d ? [g - d, g + d] : [g]) {
+    const kk = mod(k, RING), bm = BM.get(set + kk); if (bm) return bm;
+    if (d >= 2) { const im = srcAt(set, kk); if (im && im.naturalWidth) return im; }
+  }
+  return null;
+}
+const ok = im => im && (im.naturalWidth || im.width);
+const IDS = new WeakMap(); let idc = 0; const idOf = o => o ? (IDS.get(o) || (IDS.set(o, ++idc), idc)) : 0;
+function cover(im, alpha) { if (!ok(im)) return false; ctx.globalAlpha = alpha; ctx.drawImage(im, box.x, box.y, box.w, box.h); return true; }
 function draw() {
-  const ni = Math.round(nk * (MN - 1));
-  const key = mod(p, NSEG).toFixed(4) + '|' + nb.toFixed(3) + '|' + ni;
+  prefetch();
+  const rest = !(dragging && moved) && p === target && target === Math.round(target), st = mod(Math.round(p), NSEG);
+  const day = nb < 1 ? (rest && ok(STOPD[st]) ? STOPD[st] : frameAt('d', p)) : null;
+  const nit = nb > 0 ? (rest && ok(STOPN[st]) ? STOPN[st] : frameAt('n', p)) : null;
+  const key = idOf(day) + '|' + idOf(nit) + '|' + nb.toFixed(3);
   if (key === lastKey) return; lastKey = key;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.globalAlpha = 1; ctx.fillStyle = '#121414'; ctx.fillRect(0, 0, innerWidth, innerHeight);
-  const fd = ringFrame(p);
-  if (nb < 1) cover(fd, 1);
-  if (nb > 0) { if (!cover(NIGHT[ni], nb)) lastKey = ''; }
+  if (day) cover(day, 1);
+  if (nit) cover(nit, day ? nb : 1);
   ctx.globalAlpha = 1;
   if (document.body.classList.contains('port')) {
     // cheap ambient glow: tiny canvas, blurred by CSS
-    if (nb < 1 && fd && fd.naturalWidth) { actx.globalAlpha = 1; actx.drawImage(fd, 0, 0, 64, 36); }
-    const nf = NIGHT[ni]; if (nb > 0 && nf && nf.naturalWidth) { actx.globalAlpha = nb; actx.drawImage(nf, 0, 0, 64, 36); }
+    if (ok(day)) { actx.globalAlpha = 1; actx.drawImage(day, 0, 0, 64, 36); }
+    if (ok(nit)) { actx.globalAlpha = day ? nb : 1; actx.drawImage(nit, 0, 0, 64, 36); }
   }
 }
 
 /* ================= FLOOR OVERLAY ================= */
 const NS = 'http://www.w3.org/2000/svg';
-const viewKey = () => nightOn ? 'n' : String(mod(Math.round(p), NSEG));
+const viewKey = () => String(mod(Math.round(p), NSEG));
 let ovKey = '';
 function floorPoly(fl, key) { const L = VIEWS[key], top = L[FLOORS - fl], bot = L[FLOORS - fl + 1]; return top.concat(bot.slice().reverse()); }
 function inPoly(x, y, P) { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; }
@@ -562,7 +590,7 @@ const snap = v => Math.round(v);
 const SENS = () => 1 / (Math.min(innerWidth, 1400) * 0.7);
 let hinted = false; const hideHint = () => { if (!hinted) { hinted = true; $('hint').style.opacity = 0; } };
 cv.addEventListener('pointerdown', e => {
-  if (S.view !== 'bina' || S.busy || nightOn) return;
+  if (S.view !== 'bina' || S.busy) return;
   dragging = true; moved = false; downX = lastX = e.clientX; downY = e.clientY; lastT = performance.now(); vel = 0; startStop = Math.round(target);
   try { cv.setPointerCapture(e.pointerId); } catch (_) {}
 });
@@ -585,19 +613,19 @@ cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 cv.addEventListener('pointerleave', () => { if (!dragging) setHover(null); });
 let wheelT;
 addEventListener('wheel', e => {
-  if (S.view !== 'bina' || nightOn) return;
+  if (S.view !== 'bina') return;
   const d = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * 0.0015;
   target = clamp(target + d); hideHint(); clearTimeout(wheelT); wheelT = setTimeout(() => target = snap(target), 150);
 }, { passive: true });
 addEventListener('keydown', e => {
   if (e.key === 'Escape') return goBack();
-  if (S.view !== 'bina' || nightOn) return;
+  if (S.view !== 'bina') return;
   if (e.key === 'ArrowLeft') { target = snap(Math.round(target) - 1); hideHint(); }
   if (e.key === 'ArrowRight') { target = snap(Math.round(target) + 1); hideHint(); }
 });
-document.querySelectorAll('.stops button').forEach(b => b.addEventListener('click', () => { if (nightOn) return; const cur = Math.round(target), d = mod(+b.dataset.p - cur + 2, NSEG) - 2; target = cur + d; hideHint(); }));
+document.querySelectorAll('.stops button').forEach(b => b.addEventListener('click', () => { const cur = Math.round(target), d = mod(+b.dataset.p - cur + 2, NSEG) - 2; target = cur + d; hideHint(); }));
 document.querySelectorAll('#mode button').forEach(b => b.addEventListener('click', () => {
-  S.mode = b.dataset.m; nightOn = S.mode === 'night'; if (nightOn) target = Math.round(target); $('dock').style.opacity = nightOn ? 0 : 1; $('dock').style.pointerEvents = nightOn ? 'none' : '';
+  S.mode = b.dataset.m; nightOn = S.mode === 'night';
   document.querySelectorAll('#mode button').forEach(x => x.classList.toggle('on', x === b));
 }));
 
@@ -610,14 +638,13 @@ function loop(now) {
   if (dragging && moved) p += diff * k;
   else { const mn = 0.25 * dt, st = diff * k; p += Math.abs(st) < mn ? Math.sign(diff) * Math.min(Math.abs(diff), mn) : st; }
   if (!(dragging && moved) && Math.abs(target - p) < 0.002) p = target;
-  // night: fade to the night angle, then play day → night; reverse on the way back
-  if (nightOn) { nb = Math.min(1, nb + dt / 0.45); if (nb >= 1) nk = Math.min(1, nk + dt / 2.6); }
-  else { nk = Math.max(0, nk - dt / 1.8); if (nk <= 0) nb = Math.max(0, nb - dt / 0.45); }
+  // night: cross-fade to the night version of the same angle (works at every angle, rotation stays on)
+  nb = nightOn ? Math.min(1, nb + dt / 0.9) : Math.max(0, nb - dt / 0.9);
   draw();
   $('knob').style.left = (mod(p, NSEG) / NSEG * 100) + '%';
-  const st = nightOn && nb >= 1 ? 'n' : String(mod(Math.round(p), NSEG));
+  const st = String(mod(Math.round(p), NSEG));
   if (st !== curStop) { curStop = st; $('facadeName').textContent = STOP_NAMES[st]; document.querySelectorAll('.stops button').forEach(b => b.classList.toggle('on', b.dataset.p === st)); }
-  const rest = nightOn ? (nb >= 1 && nk >= 1) : (!(dragging && moved) && p === target && target === Math.round(target) && nb <= 0);
+  const rest = !(dragging && moved) && p === target && target === Math.round(target);
   if (rest && (!overlayOn || ovKey !== viewKey())) { buildOverlay(); ov.classList.remove('off'); overlayOn = true; }
   if (!rest && overlayOn) { ov.classList.add('off'); overlayOn = false; if (!floorBtns.some(b => b.matches(':hover'))) setHover(null); }
   requestAnimationFrame(loop);
@@ -652,7 +679,7 @@ function openFloor(fl) {
   if (S.busy || S.view !== 'bina') return;
   S.busy = true; S.floor = fl; setHover(fl);
   // settle on the nearest facade instantly so the zoom target is exact
-  if (!nightOn) { target = snap(target); p = target; } else { nb = 1; nk = 1; } lastKey = '';
+  target = snap(target); p = target; lastKey = '';
   if (!overlayOn) { buildOverlay(); ov.classList.remove('off'); overlayOn = true; setHover(fl); }
   const [fx, fy] = floorCenter(fl);
   const cx = box.x + fx * box.w, cy = box.y + fy * box.h;
