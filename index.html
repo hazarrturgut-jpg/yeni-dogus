@@ -429,18 +429,32 @@ const $ = id => document.getElementById(id);
 const S = { view: 'bina', floor: null, apt: null, room: null, busy: false, mode: 'day' };
 
 /* ================= LOADING ================= */
-const SEG = [[], [], [], []], NSEGF = [[], [], [], []], STOPD = [], STOPN = [];
+// Ring frames are kept as small compressed blobs (≈50 KB each) and decoded on demand — never all at once.
+const DAYB = [], NIGHTB = [], STOPD = [], STOPN = [];
 const preload = [];
 function img(src, arr, wait = true) { const im = new Image(); im.decoding = 'async'; if (wait) preload.push(new Promise(r => { im.onload = im.onerror = () => { tick(); r(); }; })); im.src = src; if (arr) arr.push(im); return im; }
-let loaded = 0, TOTAL = M * NSEG + NSEG + APTS.length + 1;
+let loaded = 0, TOTAL = (M - 1) * NSEG + NSEG + APTS.length + 1;
 function tick() { loaded++; $('lb').style.width = (loaded / TOTAL * 100) + '%'; }
 const fn = i => String(i + 1).padStart(3, '0');
-for (let s = 0; s < NSEG; s++) for (let i = 0; i < M; i++) img(`r/${s}/${fn(i)}.webp`, SEG[s]);
+const QUEUE = []; let active = 0;
+function pump() {
+  while (active < 6 && QUEUE.length) {
+    const [url, arr, idx, done] = QUEUE.shift(); active++;
+    fetch(url).then(r => r.ok ? r.blob() : null).then(b => { arr[idx] = b; }).catch(() => {}).finally(() => { active--; done && done(); pump(); });
+  }
+}
+function blob(url, arr, idx, wait) {
+  if (wait) preload.push(new Promise(r => QUEUE.push([url, arr, idx, () => { tick(); r(); }])));
+  else QUEUE.push([url, arr, idx, null]);
+}
+// ring frame global index g = s * (M - 1) + f; the last frame of a segment equals the first of the next
+for (let s = 0; s < NSEG; s++) for (let i = 0; i < M - 1; i++) blob(`r/${s}/${fn(i)}.webp`, DAYB, s * (M - 1) + i, true);
+pump();
 for (let s = 0; s < NSEG; s++) img(`s/d${s}.webp`, STOPD);
 APTS.forEach(a => img(`plan/d${a.n}.webp`)); img('kat.webp');
 Promise.all(preload).then(ready);
 // night frames + room photos load in background
-function loadLater() { for (let s = 0; s < NSEG; s++) img(`s/n${s}.webp`, STOPN, false); for (let s = 0; s < NSEG; s++) for (let i = 0; i < M; i++) img(`n/${s}/${fn(i)}.webp`, NSEGF[s], false); Object.values(PHOTOS).flat().forEach(k => { const im = new Image(); im.src = `ic/${k}.webp`; }); }
+function loadLater() { for (let s = 0; s < NSEG; s++) img(`s/n${s}.webp`, STOPN, false); for (let s = 0; s < NSEG; s++) for (let i = 0; i < M - 1; i++) blob(`n/${s}/${fn(i)}.webp`, NIGHTB, s * (M - 1) + i, false); pump(); Object.values(PHOTOS).flat().forEach(k => { const im = new Image(); im.src = `ic/${k}.webp`; }); }
 
 /* ================= LAYOUT: full-screen cover ================= */
 const cv = $('cv'), ctx = cv.getContext('2d'), ov = $('ov'), actx = $('amb').getContext('2d');
@@ -476,16 +490,17 @@ let p = 0, target = 0, nb = 0, nightOn = false, lastKey = '';
 const mod = (a, n) => ((a % n) + n) % n;
 /* Smooth scrubbing: frames are decoded ahead of time into ImageBitmaps (small LRU window around
    the current angle), so drawing never waits on a JPEG/WebP decode. */
-const RING = NSEG * (M - 1), MOB = innerWidth < 900, MAXBM = MOB ? 36 : 80, BMW = MOB ? 960 : 1280;
+const RING = NSEG * (M - 1), MOB = Math.min(innerWidth, innerHeight) < 900, MAXBM = MOB ? 28 : 44, BMW = MOB ? 960 : 1280;
 const BM = new Map(), PEND = new Set();
 const gidx = q => mod(Math.round(mod(q, NSEG) * (M - 1)), RING);
-const srcAt = (set, g) => { const ss = Math.floor(g / (M - 1)), ff = g % (M - 1); return (set === 'n' ? NSEGF : SEG)[ss][ff]; };
+const srcAt = (set, g) => (set === 'n' ? NIGHTB : DAYB)[g];
 const rdist = (a, b) => { const d = Math.abs(a - b) % RING; return Math.min(d, RING - d); };
 function want(set, g) {
   const key = set + g; if (BM.has(key) || PEND.has(key) || !window.createImageBitmap) return;
-  const im = srcAt(set, g); if (!im || !im.naturalWidth) return;
+  const b = srcAt(set, g); if (!b) return;
+  if (PEND.size > 6) return;               // decode a few at a time so the main thread stays free
   PEND.add(key);
-  createImageBitmap(im, { resizeWidth: BMW, resizeHeight: Math.round(BMW * 9 / 16), resizeQuality: 'high' })
+  createImageBitmap(b, { resizeWidth: BMW, resizeHeight: Math.round(BMW * 9 / 16), resizeQuality: 'medium' })
     .then(bm => { PEND.delete(key); BM.set(key, bm); lastKey = ''; evict(); }).catch(() => PEND.delete(key));
 }
 function evict() {
@@ -495,13 +510,13 @@ function evict() {
 }
 function prefetch() {
   const g = gidx(p), dir = target >= p ? 1 : -1, sets = nb > 0 || nightOn ? (nb >= 1 ? ['n'] : ['d', 'n']) : ['d'];
-  for (const set of sets) for (let d = 0; d <= 18; d++) { want(set, mod(g + d * dir, RING)); if (d <= 8) want(set, mod(g - d * dir, RING)); }
+  const ahead = MOB ? 14 : 22, behind = MOB ? 5 : 8;
+  for (const set of sets) for (let d = 0; d <= ahead; d++) { want(set, mod(g + d * dir, RING)); if (d <= behind) want(set, mod(g - d * dir, RING)); }
 }
 function frameAt(set, q) {
   const g = gidx(q);
   for (let d = 0; d < RING / 2; d++) for (const k of d ? [g - d, g + d] : [g]) {
     const kk = mod(k, RING), bm = BM.get(set + kk); if (bm) return bm;
-    if (d >= 2) { const im = srcAt(set, kk); if (im && im.naturalWidth) return im; }
   }
   return null;
 }
@@ -511,8 +526,9 @@ function cover(im, alpha) { if (!ok(im)) return false; ctx.globalAlpha = alpha; 
 function draw() {
   prefetch();
   const rest = !(dragging && moved) && p === target && target === Math.round(target), st = mod(Math.round(p), NSEG);
-  const day = nb < 1 ? (rest && ok(STOPD[st]) ? STOPD[st] : frameAt('d', p)) : null;
   const nit = nb > 0 ? (rest && ok(STOPN[st]) ? STOPN[st] : frameAt('n', p)) : null;
+  let day = nb < 1 || !nit ? (rest && ok(STOPD[st]) ? STOPD[st] : frameAt('d', p)) : null;
+  if (!day && !nit) day = STOPD[st];        // nothing decoded yet: show the sharp still of the nearest facade
   const key = idOf(day) + '|' + idOf(nit) + '|' + nb.toFixed(3);
   if (key === lastKey) return; lastKey = key;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
