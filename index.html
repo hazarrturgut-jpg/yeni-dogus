@@ -401,7 +401,7 @@ const APTS = [
     ['balkon','Balkon','7,13',R(71.5,82.4,100.0,99.3)] ] }
 ];
 // Satış durumu: kat → satılan daire numaraları (örnek). Kat 1 = zemin.
-const SOLD = {};
+const SOLD = { 1: [1, 4], 2: [1, 2, 4], 3: [2, 4] };   // floor 1 = Zemin, 2 = 1. Kat, 3 = 2. Kat
 const isSold = (floor, apt) => (SOLD[floor] || []).includes(apt);
 // WhatsApp numarası: ülke kodu ile, boşluksuz (örn. 905321234567). Boşsa WhatsApp kişi seçtirir.
 const WA_NUMBER = '905303201247';
